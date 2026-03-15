@@ -105,6 +105,7 @@ import { RULE_TAB_TYPE } from '@/constant'
 import {
   fetchRuleProviderCacheStats,
   fetchRules,
+  isRuleCacheUpdating,
   isRuleDomainLookup,
   isRuleLookupLoading,
   renderRules,
@@ -113,6 +114,7 @@ import {
   ruleLookupFallbackRule,
   ruleLookupResults,
   ruleLookupUnsupported,
+  ruleCacheRefreshCount,
   ruleCacheTotalRules,
   rules,
   rulesFilter,
@@ -120,14 +122,42 @@ import {
   searchRuleByDomain,
 } from '@/store/rules'
 import type { Rule } from '@/types'
-import { computed, watch } from 'vue'
+import { computed, onBeforeUnmount, watch } from 'vue'
 
 fetchRules()
-fetchRuleProviderCacheStats()
-  .then((stats) => {
+
+const syncRuleCacheStats = async () => {
+  try {
+    const stats = await fetchRuleProviderCacheStats()
     ruleCacheTotalRules.value = stats.totalRules
-  })
-  .catch(() => {})
+
+    if (stats.progress?.isUpdating) {
+      isRuleCacheUpdating.value = true
+      ruleCacheRefreshCount.value = stats.progress.totalRules || 0
+      return
+    }
+
+    if (isRuleCacheUpdating.value) {
+      ruleCacheRefreshCount.value = 0
+    }
+
+    isRuleCacheUpdating.value = false
+  } catch {
+    isRuleCacheUpdating.value = false
+  }
+}
+
+syncRuleCacheStats()
+
+const statsPollingTimer = setInterval(() => {
+  if (isRuleCacheUpdating.value) {
+    syncRuleCacheStats()
+  }
+}, 500)
+
+onBeforeUnmount(() => {
+  clearInterval(statsPollingTimer)
+})
 
 watch(
   rulesFilter,
