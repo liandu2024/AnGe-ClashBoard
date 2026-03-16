@@ -35,7 +35,7 @@
 
 <script setup lang="ts">
 import { collapseGroupMap } from '@/store/settings'
-import { getDescendantProxyGroups, getDirectChildProxyGroups, proxyMap } from '@/store/proxies'
+import { getDescendantProxyGroups, proxyMap } from '@/store/proxies'
 import { ChevronDownIcon } from '@heroicons/vue/24/outline'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -49,12 +49,12 @@ const { locale } = useI18n()
 const isExpanded = ref(false)
 const selectedGroupName = computed(() => proxyMap.value[props.groupName]?.now || '')
 
-const directChildGroups = computed(() => {
+const selectedProxyHasNodes = computed(() => {
   if (!selectedGroupName.value) {
-    return []
+    return false
   }
 
-  return getDirectChildProxyGroups(selectedGroupName.value)
+  return (proxyMap.value[selectedGroupName.value]?.all?.length ?? 0) > 0
 })
 
 const descendantGroups = computed(() => {
@@ -65,7 +65,7 @@ const descendantGroups = computed(() => {
   return getDescendantProxyGroups(selectedGroupName.value)
 })
 
-const canPenetrate = computed(() => directChildGroups.value.length > 0)
+const canPenetrate = computed(() => selectedProxyHasNodes.value)
 
 const renderedGroups = computed(() => {
   if (!selectedGroupName.value || !canPenetrate.value) {
