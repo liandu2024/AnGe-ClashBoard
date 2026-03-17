@@ -4,7 +4,7 @@
 
 AnGe-ClashBoard 是一个基于 `Vue 3 + TypeScript + Vite` 的 Clash 面板，面向 `Clash API`、`Mihomo`、`OpenClash`、`Nikki` 和 `sing-box` 的运行态管理、观测与排错。
 
-当前版本为 `1.01`，基于开源 [zashboard](https://github.com/Zephyruso/zashboard) 二次开发。
+当前版本为 `1.02`，基于开源 [zashboard](https://github.com/Zephyruso/zashboard) 二次开发。
 
 ## 项目特点
 
@@ -60,6 +60,8 @@ curl -fsSL https://raw.githubusercontent.com/liandu2024/AnGe-ClashBoard/main/scr
 ```bash
 ghcr.io/liandu2024/ange-clashboard:latest
 ```
+
+已发布镜像支持 `linux/amd64`、`linux/arm64` 和 `linux/arm/v7`。
 
 手动运行：
 
