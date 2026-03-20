@@ -68,21 +68,34 @@ import {
 } from '@/composables/proxies'
 import { PROXY_TAB_TYPE } from '@/constant'
 import { isMiddleScreen } from '@/helper/utils'
-import { fetchProxies, proxiesTabShow } from '@/store/proxies'
+import {
+  fetchProxies,
+  getDescendantProxyNames,
+  getProxyAutoRefreshSchedule,
+  proxiesTabShow,
+  proxyProviederList,
+} from '@/store/proxies'
 import { twoColumnProxyGroup } from '@/store/settings'
-import { useSessionStorage } from '@vueuse/core'
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useDocumentVisibility, useSessionStorage } from '@vueuse/core'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 const { padding } = usePaddingForViews({
   offsetTop: 0,
   offsetBottom: 0,
 })
 const proxiesRef = ref()
+const documentVisible = useDocumentVisibility()
+const autoRefreshTimer = ref<number>()
 const scrollStatus = useSessionStorage('cache/proxies-scroll-status', {
   [PROXY_TAB_TYPE.POLICY]: 0,
   [PROXY_TAB_TYPE.NODE]: 0,
   [PROXY_TAB_TYPE.PROVIDER]: 0,
 })
+const AUTO_REFRESH_GRACE_MS = 30 * 1000
+type AutoRefreshSchedule = {
+  dueAt: number
+  intervalMs: number
+}
 
 const handleScroll = () => {
   scrollStatus.value[proxiesTabShow.value] = proxiesRef.value.scrollTop
@@ -107,8 +120,94 @@ const waitTickUntilReady = (startTime = performance.now()) => {
 watch(proxiesTabShow, () =>
   nextTick(() => {
     waitTickUntilReady()
+    fetchProxies()
   }),
 )
+
+const nextAutoRefreshSchedule = computed<AutoRefreshSchedule | null>(() => {
+  const candidateNames = new Set<string>()
+
+  if (proxiesTabShow.value === PROXY_TAB_TYPE.PROVIDER) {
+    renderGroups.value.forEach((providerName) => {
+      const provider = proxyProviederList.value.find((item) => item.name === providerName)
+
+      provider?.proxies.forEach((proxy) => {
+        candidateNames.add(proxy.name)
+      })
+    })
+  } else {
+    const rootNames =
+      proxiesTabShow.value === PROXY_TAB_TYPE.NODE ? nodeGroupBlocks.value.flat() : renderGroups.value
+
+    rootNames.forEach((name) => {
+      candidateNames.add(name)
+      getDescendantProxyNames(name).forEach((descendantName) => {
+        candidateNames.add(descendantName)
+      })
+    })
+  }
+
+  let nextSchedule: AutoRefreshSchedule | null = null
+
+  candidateNames.forEach((name) => {
+    const schedule = getProxyAutoRefreshSchedule(name)
+
+    if (!schedule) {
+      return
+    }
+
+    if (!nextSchedule || schedule.dueAt < nextSchedule.dueAt) {
+      nextSchedule = schedule
+    }
+  })
+
+  return nextSchedule
+})
+
+const clearAutoRefreshTimer = () => {
+  if (autoRefreshTimer.value) {
+    window.clearTimeout(autoRefreshTimer.value)
+    autoRefreshTimer.value = undefined
+  }
+}
+
+const scheduleAutoRefresh = () => {
+  clearAutoRefreshTimer()
+
+  if (documentVisible.value !== 'visible') {
+    return
+  }
+
+  const schedule = nextAutoRefreshSchedule.value
+
+  if (!schedule) {
+    return
+  }
+
+  const now = Date.now()
+  let nextRefreshAt = schedule.dueAt + AUTO_REFRESH_GRACE_MS
+
+  if (nextRefreshAt <= now) {
+    const cyclesBehind = Math.floor((now - nextRefreshAt) / schedule.intervalMs) + 1
+
+    nextRefreshAt += cyclesBehind * schedule.intervalMs
+  }
+
+  const delay = Math.max(1000, nextRefreshAt - now)
+
+  autoRefreshTimer.value = window.setTimeout(async () => {
+    if (documentVisible.value !== 'visible') {
+      scheduleAutoRefresh()
+      return
+    }
+
+    try {
+      await fetchProxies()
+    } finally {
+      scheduleAutoRefresh()
+    }
+  }, delay)
+}
 
 isProxiesPageMounted.value = false
 
@@ -120,6 +219,14 @@ onMounted(() => {
       fetchProxies()
     })
   })
+})
+
+watch([nextAutoRefreshSchedule, documentVisible], () => {
+  scheduleAutoRefresh()
+})
+
+onUnmounted(() => {
+  clearAutoRefreshTimer()
 })
 
 const renderComponent = computed(() => {

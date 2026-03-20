@@ -18,7 +18,7 @@ import {
 } from '@/constant'
 import { isProxyGroup } from '@/helper'
 import { showNotification } from '@/helper/notification'
-import type { Proxy, ProxyProvider } from '@/types'
+import type { History, Proxy, ProxyProvider } from '@/types'
 import { useStorage } from '@vueuse/core'
 import { last } from 'lodash'
 import pLimit from 'p-limit'
@@ -46,6 +46,105 @@ export const proxyMap = ref<Record<string, Proxy>>({})
 export const IPv6Map = useStorage<Record<string, boolean>>('config/ipv6-map', {})
 export const hiddenGroupMap = useStorage<Record<string, boolean>>('config/hidden-group-map', {})
 export const proxyProviederList = ref<ProxyProvider[]>([])
+
+const AUTO_REFRESHABLE_PROXY_TYPES = new Set([PROXY_TYPE.Fallback, PROXY_TYPE.URLTest])
+const MIN_AUTO_REFRESH_INTERVAL_MS = 30 * 1000
+const MAX_AUTO_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000
+const AUTO_REFRESH_INTERVAL_JITTER_RATIO = 0.35
+
+const getMedian = (values: number[]) => {
+  const sorted = [...values].sort((prev, next) => prev - next)
+  const middle = Math.floor(sorted.length / 2)
+
+  if (sorted.length % 2 === 0) {
+    return (sorted[middle - 1] + sorted[middle]) / 2
+  }
+
+  return sorted[middle]
+}
+
+const getHistoryIntervals = (history: History) => {
+  const intervals: number[] = []
+
+  for (let index = 1; index < history.length; index++) {
+    const prevTime = Date.parse(history[index - 1].time)
+    const currentTime = Date.parse(history[index].time)
+
+    if (!Number.isFinite(prevTime) || !Number.isFinite(currentTime)) {
+      continue
+    }
+
+    const interval = currentTime - prevTime
+
+    if (interval < MIN_AUTO_REFRESH_INTERVAL_MS || interval > MAX_AUTO_REFRESH_INTERVAL_MS) {
+      continue
+    }
+
+    intervals.push(interval)
+  }
+
+  return intervals.slice(-4)
+}
+
+const hasStableIntervals = (intervals: number[]) => {
+  if (intervals.length < 2) {
+    return false
+  }
+
+  const median = getMedian(intervals)
+
+  return intervals.every((interval) => {
+    return Math.abs(interval - median) <= median * AUTO_REFRESH_INTERVAL_JITTER_RATIO
+  })
+}
+
+export const inferProxyAutoRefreshIntervalMs = (proxyName: string) => {
+  const proxy = proxyMap.value[proxyName]
+
+  if (!proxy?.history?.length) {
+    return null
+  }
+
+  const intervals = getHistoryIntervals(proxy.history)
+
+  if (!intervals.length) {
+    return null
+  }
+
+  const medianInterval = getMedian(intervals)
+  const proxyType = proxy.type.toLowerCase() as PROXY_TYPE
+
+  if (AUTO_REFRESHABLE_PROXY_TYPES.has(proxyType)) {
+    return medianInterval
+  }
+
+  if (hasStableIntervals(intervals)) {
+    return medianInterval
+  }
+
+  return null
+}
+
+export const getProxyAutoRefreshSchedule = (proxyName: string) => {
+  const proxy = proxyMap.value[proxyName]
+  const intervalMs = inferProxyAutoRefreshIntervalMs(proxyName)
+  const latestHistory = last(proxy?.history)
+
+  if (!intervalMs || !latestHistory) {
+    return null
+  }
+
+  const latestTime = Date.parse(latestHistory.time)
+
+  if (!Number.isFinite(latestTime)) {
+    return null
+  }
+
+  return {
+    intervalMs,
+    dueAt: latestTime + intervalMs,
+  }
+}
 
 const speedtestUrlWithDefault = computed(() => {
   return speedtestUrl.value || TEST_URL
@@ -484,6 +583,30 @@ export const getDescendantProxyGroups = (groupName: string) => {
       visited.add(childGroupName)
       descendants.push(childGroupName)
       walk(childGroupName)
+    })
+  }
+
+  walk(groupName)
+
+  return descendants
+}
+
+export const getDescendantProxyNames = (groupName: string) => {
+  const descendants: string[] = []
+  const visited = new Set<string>([groupName])
+
+  const walk = (name: string) => {
+    ;(proxyMap.value[name]?.all ?? []).forEach((memberName) => {
+      if (visited.has(memberName)) {
+        return
+      }
+
+      visited.add(memberName)
+      descendants.push(memberName)
+
+      if (proxyMap.value[memberName]?.all?.length) {
+        walk(memberName)
+      }
     })
   }
 

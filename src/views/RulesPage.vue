@@ -102,6 +102,7 @@ import RuleProvider from '@/components/rules/RuleProvider.vue'
 import RulesCtrl from '@/components/sidebar/RulesCtrl.tsx'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { RULE_TAB_TYPE } from '@/constant'
+import { showNotification } from '@/helper/notification'
 import {
   fetchRuleProviderCacheStats,
   fetchRules,
@@ -116,15 +117,18 @@ import {
   ruleLookupFallbackRule,
   ruleLookupResults,
   ruleLookupUnsupported,
+  ruleProviderList,
   rules,
   rulesFilter,
   rulesTabShow,
   searchRuleByQuery,
+  updateRuleProviderCache,
 } from '@/store/rules'
+import { fetchProxies } from '@/store/proxies'
 import type { Rule } from '@/types'
-import { computed, onBeforeUnmount, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
-fetchRules()
+const autoRuleCacheBootstrapAttempted = ref(false)
 
 const syncRuleCacheStats = async () => {
   try {
@@ -147,7 +151,53 @@ const syncRuleCacheStats = async () => {
   }
 }
 
-syncRuleCacheStats()
+const ensureRuleCacheBootstrap = async () => {
+  if (autoRuleCacheBootstrapAttempted.value) {
+    return
+  }
+
+  if (
+    ruleProviderList.value.length === 0 ||
+    ruleCacheTotalRules.value > 0 ||
+    isRuleCacheUpdating.value
+  ) {
+    return
+  }
+
+  autoRuleCacheBootstrapAttempted.value = true
+  isRuleCacheUpdating.value = true
+  ruleCacheRefreshCount.value = 0
+
+  try {
+    const result = await updateRuleProviderCache()
+
+    if (result.cancelled) {
+      autoRuleCacheBootstrapAttempted.value = false
+      return
+    }
+
+    ruleCacheRefreshCount.value = result.progressRules
+    ruleCacheTotalRules.value = result.totalRules
+  } catch (error) {
+    autoRuleCacheBootstrapAttempted.value = false
+    showNotification({
+      key: 'ruleCacheAutoInitFailed',
+      content: error instanceof Error ? error.message : String(error),
+      type: 'alert-error',
+      timeout: 3000,
+    })
+  } finally {
+    await syncRuleCacheStats()
+  }
+}
+
+const initializeRulesPage = async () => {
+  await Promise.allSettled([fetchRules(), fetchProxies()])
+  await syncRuleCacheStats()
+  await ensureRuleCacheBootstrap()
+}
+
+void initializeRulesPage()
 
 const statsPollingTimer = setInterval(() => {
   if (isRuleCacheUpdating.value) {
@@ -166,6 +216,10 @@ watch(
   },
   { immediate: true },
 )
+
+watch(rulesTabShow, () => {
+  fetchProxies()
+})
 
 const { padding } = usePaddingForViews({
   offsetTop: 8,

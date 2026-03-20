@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.41](https://github.com/liandu2024/AnGe-ClashBoard/compare/v1.40...v1.41) (2026-03-20)
+
+### Features
+
+* auto-bootstrap the local rule cache on fresh installs so rule penetration data no longer stays at zero until a manual refresh
+* refresh proxy status displays on related page and tab switches, then schedule conservative follow-up refreshes from Clash history timing
+
+### Bug Fixes
+
+* keep update animations spinning on the icon only instead of rotating the whole button background
+* align mobile horizontal spacing across policy, node, and provider tabs
+* scale iPhone mobile UI closer to Android for more consistent visual density
+
 ## [1.40](https://github.com/liandu2024/AnGe-ClashBoard/compare/v1.30...v1.40) (2026-03-20)
 
 ### Features

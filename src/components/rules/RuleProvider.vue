@@ -6,10 +6,10 @@
       <span class="text-base-content/80 text-xs"> ({{ ruleProvider.ruleCount }}) </span>
       <button
         v-if="ruleProvider.vehicleType !== 'Inline'"
-        :class="twMerge('btn btn-circle btn-xs btn-ghost', isUpdating ? 'animate-spin' : '')"
+        :class="twMerge('btn btn-circle btn-xs btn-ghost')"
         @click="updateRuleProviderClickHandler"
       >
-        <ArrowPathIcon class="h-4 w-4" />
+        <ArrowPathIcon :class="twMerge('h-4 w-4', isUpdating ? 'animate-spin' : '')" />
       </button>
     </div>
     <div class="text-base-content/80 flex h-5 items-center gap-2 text-xs">

@@ -32,15 +32,10 @@
         </span>
         <button
           v-if="isUpdateableRuleSet"
-          :class="
-            twMerge(
-              'btn btn-circle btn-ghost btn-xs -mt-[2px] ml-1',
-              isUpdating ? 'animate-spin' : '',
-            )
-          "
+          :class="twMerge('btn btn-circle btn-ghost btn-xs -mt-[2px] ml-1')"
           @click.stop="updateRuleProviderClickHandler"
         >
-          <ArrowPathIcon class="h-4 w-4" />
+          <ArrowPathIcon :class="twMerge('h-4 w-4', isUpdating ? 'animate-spin' : '')" />
         </button>
         <InformationCircleIcon
           v-if="rule.extra"

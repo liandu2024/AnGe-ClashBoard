@@ -2,11 +2,11 @@
 import { computed, onMounted, onUnmounted, ref, type Ref, watch } from 'vue'
 import { RouterView } from 'vue-router'
 import { useKeyboard } from './composables/keyboard'
-import { EMOJIS, FONTS } from './constant'
+import { EMOJIS, FONTS, IS_APPLE_DEVICE } from './constant'
 import { autoImportSettings, importSettingsFromUrl } from './helper/autoImportSettings'
 import { backgroundImage } from './helper/indexeddb'
 import { initNotification } from './helper/notification'
-import { getBackendFromUrl, isPreferredDark } from './helper/utils'
+import { getBackendFromUrl, isMiddleScreen, isPreferredDark } from './helper/utils'
 import { initializeWindowResizeState, isWindowResizing } from './helper/windowResizeState'
 import {
   blurIntensity,
@@ -59,6 +59,21 @@ const setThemeColor = () => {
 }
 
 watch(isPreferredDark, setThemeColor)
+
+const prefersCoarsePointer = window.matchMedia('(hover: none) and (pointer: coarse)')
+const isAppleMobileDevice = computed(() => {
+  return IS_APPLE_DEVICE && isMiddleScreen.value && prefersCoarsePointer.matches
+})
+
+watch(
+  isAppleMobileDevice,
+  () => {
+    document.documentElement.classList.toggle('apple-mobile-ui', isAppleMobileDevice.value)
+  },
+  {
+    immediate: true,
+  },
+)
 
 watch(
   disablePullToRefresh,
@@ -123,6 +138,7 @@ onMounted(() => {
 onUnmounted(() => {
   cleanupWindowResizeState?.()
   cleanupWindowResizeState = undefined
+  document.documentElement.classList.remove('apple-mobile-ui')
 })
 
 const blurClass = computed(() => {

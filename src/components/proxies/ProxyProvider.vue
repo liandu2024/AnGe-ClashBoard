@@ -67,10 +67,10 @@
           </button>
           <button
             v-if="proxyProvider.vehicleType !== 'Inline'"
-            :class="twMerge('btn btn-circle btn-sm z-30', isUpdating ? 'animate-spin' : '')"
+            :class="twMerge('btn btn-circle btn-sm z-30')"
             @click.stop="updateProviderClickHandler"
           >
-            <ArrowPathIcon class="h-4 w-4" />
+            <ArrowPathIcon :class="twMerge('h-4 w-4', isUpdating ? 'animate-spin' : '')" />
           </button>
         </div>
       </div>

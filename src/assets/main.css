@@ -33,6 +33,13 @@
     src: url('./TwemojiMozilla-flags.woff2') format('woff2');
   }
 }
+
+html.apple-mobile-ui {
+  font-size: 17px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 @utility card {
   @apply bg-base-100 rounded-lg shadow-none;
   .card-body {
