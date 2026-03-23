@@ -20,6 +20,7 @@ export const ruleLookupResults = ref<
     behavior: string
     format: string
     url: string
+    totalRules: number
     matches: {
       line: number
       value: string
@@ -221,6 +222,7 @@ export const searchRuleByQuery = async () => {
         behavior: string
         format: string
         url: string
+        totalRules: number
         matches: {
           line: number
           value: string
@@ -249,6 +251,7 @@ export const searchRuleByQuery = async () => {
         behavior: item.behavior,
         format: item.format,
         url: item.url,
+        totalRules: item.totalRules,
         matches: item.matches,
         linkedRules: rules.value.filter(
           (rule) => rule.type === 'RuleSet' && rule.payload === item.name,

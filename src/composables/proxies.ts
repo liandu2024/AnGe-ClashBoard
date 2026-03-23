@@ -1,6 +1,7 @@
 import { isSingBox } from '@/api'
 import { GLOBAL, PROXY_TAB_TYPE } from '@/constant'
 import { isHiddenGroup } from '@/helper'
+import { getDomainGroupNames, getDomainGroupRuleSetOptions } from '@/helper/proxyDomainGroups'
 import { configs } from '@/store/config'
 import { proxiesTabShow, proxyGroupList, proxyMap, proxyProviederList } from '@/store/proxies'
 import { rules } from '@/store/rules'
@@ -33,6 +34,10 @@ const getRenderGroups = () => {
 
   if (proxiesTabShow.value === PROXY_TAB_TYPE.NODE) {
     return currentGroups.filter((name) => !isPolicyGroup(name))
+  }
+
+  if (proxiesTabShow.value === PROXY_TAB_TYPE.DOMAIN) {
+    return []
   }
 
   return currentGroups
@@ -144,7 +149,14 @@ const isPolicyGroup = (name: string) => {
 
 export const disableProxiesPageScroll = ref(false)
 export const isProxiesPageMounted = ref(false)
+export const domainGroupSelectedName = ref('')
+export const domainGroupSelectedProvider = ref('')
+export const domainGroupSearch = ref('')
 export const policyGroups = computed(() => getCurrentProxyGroups().filter((name) => isPolicyGroup(name)))
+export const domainGroups = computed(() => getDomainGroupNames(rules.value, policyGroups.value))
+export const domainGroupProviderNames = computed(() =>
+  getDomainGroupRuleSetOptions(domainGroupSelectedName.value, rules.value),
+)
 export const nodeGroups = computed(() => getCurrentProxyGroups().filter((name) => !isPolicyGroup(name)))
 export const nodeGroupBlocks = computed(() => {
   const groups = nodeGroups.value

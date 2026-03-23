@@ -1,5 +1,6 @@
 import express from 'express'
 import { execFile } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import http from 'node:http'
 import { isIP } from 'node:net'
@@ -27,6 +28,47 @@ const mihomoBinaryPath =
     ? path.resolve('.tools/mihomo-bin/mihomo-windows-amd64-compatible.exe')
     : path.resolve('.tools/mihomo-bin/mihomo'))
 const ruleSearchTempDir = path.join(dataDir, 'rule-search-temp')
+const proxyGroupRulePenetrationCache = new Map()
+const proxyGroupRulePenetrationCacheBySignature = new Map()
+const PROXY_GROUP_RULE_PENETRATION_CACHE_TTL_MS = 10 * 60 * 1000
+const PROXY_GROUP_RULE_PENETRATION_CACHE_LIMIT = 16
+const serviceWorkerCleanupScript = `
+self.addEventListener('install', () => {
+  self.skipWaiting()
+})
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    const cacheKeys = await caches.keys()
+    await Promise.all(cacheKeys.map((cacheKey) => caches.delete(cacheKey)))
+    await self.registration.unregister()
+    const clientsList = await self.clients.matchAll({
+      type: 'window',
+      includeUncontrolled: true,
+    })
+    await Promise.all(
+      clientsList.map((client) => {
+        if ('navigate' in client) {
+          return client.navigate(client.url)
+        }
+
+        return Promise.resolve()
+      }),
+    )
+  })())
+})
+`.trim()
+const registerSWCleanupScript = `
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations()
+    .then((registrations) =>
+      Promise.allSettled(registrations.map((registration) => registration.unregister())),
+    )
+    .then(() => ('caches' in window ? caches.keys() : Promise.resolve([])))
+    .then((cacheKeys) => Promise.allSettled(cacheKeys.map((cacheKey) => caches.delete(cacheKey))))
+    .catch(() => {})
+}
+`.trim()
 
 fs.mkdirSync(path.dirname(dbPath), { recursive: true })
 fs.mkdirSync(ruleSearchTempDir, { recursive: true })
@@ -156,6 +198,11 @@ const getCachedRuleProviderStatement = db.prepare(`
   FROM rule_provider_cache
   ORDER BY name
 `)
+const getCachedRuleProviderByNameStatement = db.prepare(`
+  SELECT name, behavior, format, kind, source_url, interval_seconds, body, updated_at
+  FROM rule_provider_cache
+  WHERE name = ?
+`)
 const getRuleProviderCacheTotalCountStatement = db.prepare(`
   SELECT SUM(
     LENGTH(body) - LENGTH(REPLACE(body, CHAR(10), '')) +
@@ -279,6 +326,509 @@ const getRuleProviderKind = (url, format, behavior) => {
 const normalizeDomain = (domain) =>
   domain.trim().toLowerCase().replace(/^\.+/, '').replace(/\.+$/, '')
 const normalizeKeyword = (value) => value.trim().toLowerCase()
+const RULE_TYPE_ALIAS_MAP = new Map([
+  ['DOMAIN', 'DOMAIN'],
+  ['DOMAINSUFFIX', 'DOMAIN-SUFFIX'],
+  ['DOMAINKEYWORD', 'DOMAIN-KEYWORD'],
+  ['IPCIDR', 'IP-CIDR'],
+  ['IPCIDR6', 'IP-CIDR6'],
+  ['SRCIP', 'SRC-IP'],
+  ['SRCIPCIDR', 'SRC-IP-CIDR'],
+  ['SRCIPCIDR6', 'SRC-IP-CIDR6'],
+  ['DSTPORT', 'DST-PORT'],
+  ['SRCPORT', 'SRC-PORT'],
+  ['INPORT', 'IN-PORT'],
+  ['GEOIP', 'GEOIP'],
+  ['RULESET', 'RULE-SET'],
+  ['FINAL', 'FINAL'],
+  ['MATCH', 'MATCH'],
+])
+
+const normalizeRuleTypeName = (value) => {
+  const normalizedKey = String(value || '')
+    .trim()
+    .replace(/[^a-z0-9]/gi, '')
+    .toUpperCase()
+
+  return RULE_TYPE_ALIAS_MAP.get(normalizedKey) || String(value || '').trim().toUpperCase()
+}
+
+const getRuleEntryFamily = (type) => {
+  if (['DOMAIN', 'DOMAIN-SUFFIX', 'DOMAIN-KEYWORD'].includes(type)) {
+    return 'domain'
+  }
+
+  if (
+    ['IP-CIDR', 'IP-CIDR6', 'SRC-IP', 'SRC-IP-CIDR', 'SRC-IP-CIDR6', 'GEOIP'].includes(type)
+  ) {
+    return 'ip'
+  }
+
+  if (['DST-PORT', 'SRC-PORT', 'IN-PORT'].includes(type)) {
+    return 'port'
+  }
+
+  return 'other'
+}
+
+const buildRuleEntry = (type, content, params = [], options = {}) => {
+  const normalizedType = normalizeRuleTypeName(type)
+  const normalizedContent = String(content || '').trim()
+  const normalizedParams = params
+    .map((param) => String(param || '').trim())
+    .filter(Boolean)
+  const raw =
+    options.raw ||
+    [normalizedType, normalizedContent, ...normalizedParams].filter(Boolean).join(',')
+
+  return {
+    type: normalizedType,
+    family: getRuleEntryFamily(normalizedType),
+    content: normalizedContent,
+    params: normalizedParams.join(', '),
+    raw,
+    source: options.source || '',
+    line: Number.isInteger(options.line) ? options.line : null,
+  }
+}
+
+const parseRuleEntryFromTextLine = (rawLine, index = null, source = '') => {
+  const line = String(rawLine || '').trim()
+
+  if (!line || line.startsWith('#') || line.startsWith('//') || /^payload\s*:/i.test(line)) {
+    return null
+  }
+
+  const normalizedLine = line.startsWith('- ') ? line.slice(2).trim() : line
+
+  if (!normalizedLine) {
+    return null
+  }
+
+  if (/^(domain|suffix|keyword|ip-cidr|ip-cidr6):/i.test(normalizedLine)) {
+    const [, key, value] = normalizedLine.match(/^([^:]+):\s*(.+)$/) || []
+
+    if (!key || !value) {
+      return null
+    }
+
+    const canonicalType = normalizeRuleTypeName(key)
+
+    return buildRuleEntry(canonicalType, value, [], {
+      raw: `${canonicalType},${value.trim()}`,
+      source,
+      line: index,
+    })
+  }
+
+  if (normalizedLine.startsWith('+.')) {
+    const value = normalizedLine.slice(2).trim()
+
+    return buildRuleEntry('DOMAIN-SUFFIX', value, [], {
+      raw: `DOMAIN-SUFFIX,${value}`,
+      source,
+      line: index,
+    })
+  }
+
+  if (!normalizedLine.includes(',')) {
+    if (parseIpCidr(normalizedLine)) {
+      return buildRuleEntry('IP-CIDR', normalizedLine, [], {
+        raw: `IP-CIDR,${normalizedLine}`,
+        source,
+        line: index,
+      })
+    }
+
+    return buildRuleEntry('DOMAIN', normalizedLine, [], {
+      raw: `DOMAIN,${normalizedLine}`,
+      source,
+      line: index,
+    })
+  }
+
+  const parts = normalizedLine.split(',').map((part) => part.trim())
+  const canonicalType = normalizeRuleTypeName(parts[0])
+  const content = parts[1] || ''
+  const params = parts.slice(2)
+
+  if (!canonicalType || !content) {
+    return null
+  }
+
+  return buildRuleEntry(canonicalType, content, params, {
+    raw: [canonicalType, content, ...params].filter(Boolean).join(','),
+    source,
+    line: index,
+  })
+}
+
+const parseRuleEntriesFromBody = (body, source = '') => {
+  const entries = []
+  const lines = String(body || '').split(/\r?\n/)
+
+  lines.forEach((line, index) => {
+    const entry = parseRuleEntryFromTextLine(line, index + 1, source)
+
+    if (entry) {
+      entries.push(entry)
+    }
+  })
+
+  return entries
+}
+
+const isRuleEnabled = (rule) => {
+  if (rule?.extra) {
+    return !rule.extra.disabled
+  }
+
+  return !rule?.disabled
+}
+
+const parseDirectControllerRuleEntry = (rule) => {
+  const normalizedType = normalizeRuleTypeName(rule?.type)
+
+  if (!normalizedType || normalizedType === 'RULE-SET') {
+    return null
+  }
+
+  const payloadParts = String(rule?.payload || '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+  const content = payloadParts[0] || ''
+  const params = payloadParts.slice(1)
+  const proxy = String(rule?.proxy || '').trim()
+  const normalizedParams = proxy ? [...params, proxy] : params
+
+  if (!content && normalizedType !== 'MATCH' && normalizedType !== 'FINAL') {
+    return null
+  }
+
+  return buildRuleEntry(normalizedType, content, normalizedParams, {
+    raw: [normalizedType, content, ...normalizedParams].filter(Boolean).join(','),
+    source: 'controller',
+    line: Number.isInteger(rule?.index) ? rule.index + 1 : null,
+  })
+}
+
+const PROXY_GROUP_PRE_CUSTOM_KEY = '__custom_pre__'
+const PROXY_GROUP_POST_CUSTOM_KEY = '__custom_post__'
+
+const getProxyGroupCustomModeFromGroupName = (groupName) => {
+  if (groupName === PROXY_GROUP_PRE_CUSTOM_KEY) {
+    return 'pre'
+  }
+
+  if (groupName === PROXY_GROUP_POST_CUSTOM_KEY) {
+    return 'post'
+  }
+
+  return null
+}
+
+const normalizeProxyGroupCustomMode = (value) => {
+  return value === 'pre' || value === 'post' || value === 'all' ? value : null
+}
+
+const isProxyGroupCustomDirectRule = (normalizedType) => {
+  return Boolean(
+    normalizedType &&
+      normalizedType !== 'RULE-SET' &&
+      normalizedType !== 'MATCH' &&
+      normalizedType !== 'FINAL',
+  )
+}
+
+const expandProxyGroupRuleEntries = (groupName, rules, options = {}) => {
+  const customGroupMode =
+    normalizeProxyGroupCustomMode(options.customGroupMode) ||
+    (options.customGroup === true ? 'all' : null) ||
+    getProxyGroupCustomModeFromGroupName(groupName)
+  const customGroup = customGroupMode !== null
+  const relevantRules = []
+  const sortedRules = [...rules]
+    .filter((rule) => isRuleEnabled(rule))
+    .sort((prev, next) => (prev?.index || 0) - (next?.index || 0))
+  let hasSeenRuleSet = false
+
+  sortedRules.forEach((rule) => {
+    const normalizedType = normalizeRuleTypeName(rule?.type)
+
+    if (customGroup) {
+      if (normalizedType === 'RULE-SET') {
+        hasSeenRuleSet = true
+        return
+      }
+
+      if (!isProxyGroupCustomDirectRule(normalizedType)) {
+        return
+      }
+
+      if (customGroupMode === 'all') {
+        relevantRules.push(rule)
+        return
+      }
+
+      const ruleMode = hasSeenRuleSet ? 'post' : 'pre'
+
+      if (ruleMode === customGroupMode) {
+        relevantRules.push(rule)
+      }
+
+      return
+    }
+
+    if (rule?.proxy === groupName) {
+      relevantRules.push(rule)
+    }
+  })
+  const entries = []
+  const seenEntries = new Set()
+  const missingProviders = new Set()
+
+  const pushEntry = (entry) => {
+    if (!entry) {
+      return
+    }
+
+    const key = [entry.type, entry.content, entry.params, entry.raw].join('::')
+
+    if (seenEntries.has(key)) {
+      return
+    }
+
+    seenEntries.add(key)
+    entries.push(entry)
+  }
+
+  for (const rule of relevantRules) {
+    const normalizedType = normalizeRuleTypeName(rule?.type)
+
+    if (normalizedType === 'RULE-SET') {
+      const providerName = String(rule?.payload || '').trim()
+      const cachedProvider = getCachedRuleProviderByNameStatement.get(providerName)
+
+      if (!cachedProvider) {
+        missingProviders.add(providerName)
+        continue
+      }
+
+      parseRuleEntriesFromBody(cachedProvider.body, providerName).forEach(pushEntry)
+      continue
+    }
+
+    pushEntry(parseDirectControllerRuleEntry(rule))
+  }
+
+  return {
+    groupName,
+    customGroup,
+    customGroupMode,
+    totalRules: relevantRules.length,
+    items: entries,
+    missingProviders: Array.from(missingProviders),
+  }
+}
+
+const PROXY_GROUP_RULE_PENETRATION_TAB_SET = new Set(['all', 'domain', 'ip', 'port'])
+const PROXY_GROUP_RULE_PENETRATION_SORT_KEY_SET = new Set(['type', 'content', 'params', 'raw'])
+const PROXY_GROUP_RULE_PENETRATION_CACHE_VERSION = 3
+const RULE_TYPE_DISPLAY_NAME_MAP = new Map([
+  ['DOMAIN', '域名'],
+  ['DOMAIN-SUFFIX', '域名后缀'],
+  ['DOMAIN-KEYWORD', '关键字'],
+  ['IP-CIDR', '目标IP'],
+  ['IP-CIDR6', '目标IP'],
+  ['SRC-IP', '源IP'],
+  ['SRC-IP-CIDR', '源IP'],
+  ['SRC-IP-CIDR6', '源IP'],
+  ['DST-PORT', '目标端口'],
+  ['SRC-PORT', '源端口'],
+  ['IN-PORT', '入站端口'],
+  ['GEOIP', '目标IP'],
+  ['MATCH', '匹配'],
+  ['FINAL', '最终'],
+])
+
+const pruneProxyGroupRulePenetrationCache = () => {
+  const now = Date.now()
+
+  for (const [cacheKey, entry] of proxyGroupRulePenetrationCache.entries()) {
+    if (now - entry.lastAccessAt <= PROXY_GROUP_RULE_PENETRATION_CACHE_TTL_MS) {
+      continue
+    }
+
+    proxyGroupRulePenetrationCache.delete(cacheKey)
+    proxyGroupRulePenetrationCacheBySignature.delete(entry.signature)
+  }
+
+  if (proxyGroupRulePenetrationCache.size <= PROXY_GROUP_RULE_PENETRATION_CACHE_LIMIT) {
+    return
+  }
+
+  const staleEntries = [...proxyGroupRulePenetrationCache.entries()].sort(
+    (left, right) => left[1].lastAccessAt - right[1].lastAccessAt,
+  )
+
+  while (staleEntries.length > 0 && proxyGroupRulePenetrationCache.size > PROXY_GROUP_RULE_PENETRATION_CACHE_LIMIT) {
+    const [cacheKey, entry] = staleEntries.shift()
+    proxyGroupRulePenetrationCache.delete(cacheKey)
+    proxyGroupRulePenetrationCacheBySignature.delete(entry.signature)
+  }
+}
+
+const buildProxyGroupRulePenetrationSignature = (groupName, rules, options = {}) => {
+  const customGroupMode =
+    normalizeProxyGroupCustomMode(options.customGroupMode) || (options.customGroup === true ? 'all' : null)
+
+  return createHash('sha1')
+    .update(
+      JSON.stringify({
+        version: PROXY_GROUP_RULE_PENETRATION_CACHE_VERSION,
+        groupName,
+        customGroup: options.customGroup === true,
+        customGroupMode,
+        rules,
+      }),
+    )
+    .digest('hex')
+}
+
+const getProxyGroupRulePenetrationDisplayType = (type) => {
+  return RULE_TYPE_DISPLAY_NAME_MAP.get(type) || type
+}
+
+const normalizeProxyGroupRulePenetrationTab = (value) => {
+  return PROXY_GROUP_RULE_PENETRATION_TAB_SET.has(value) ? value : 'all'
+}
+
+const normalizeProxyGroupRulePenetrationSortKey = (value) => {
+  return PROXY_GROUP_RULE_PENETRATION_SORT_KEY_SET.has(value) ? value : null
+}
+
+const normalizeProxyGroupRulePenetrationSortDirection = (value) => {
+  return value === 'desc' ? 'desc' : 'asc'
+}
+
+const normalizePositiveInteger = (value, defaultValue, maxValue) => {
+  const parsed = Number.parseInt(String(value || ''), 10)
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return defaultValue
+  }
+
+  return Math.min(parsed, maxValue)
+}
+
+const getProxyGroupRulePenetrationCacheEntry = ({
+  groupName,
+  cacheKey,
+  rules,
+  customGroup = false,
+  customGroupMode = null,
+}) => {
+  pruneProxyGroupRulePenetrationCache()
+  const normalizedCustomGroupMode =
+    normalizeProxyGroupCustomMode(customGroupMode) || (customGroup === true ? 'all' : null)
+
+  if (cacheKey) {
+    const cachedEntry = proxyGroupRulePenetrationCache.get(cacheKey)
+
+    if (
+      !cachedEntry ||
+      cachedEntry.groupName !== groupName ||
+      cachedEntry.customGroup !== customGroup ||
+      cachedEntry.customGroupMode !== normalizedCustomGroupMode
+    ) {
+      const error = new Error('cache expired')
+      error.code = 'CACHE_EXPIRED'
+      throw error
+    }
+
+    cachedEntry.lastAccessAt = Date.now()
+    return cachedEntry
+  }
+
+  const signature = buildProxyGroupRulePenetrationSignature(groupName, rules, {
+    customGroup,
+    customGroupMode: normalizedCustomGroupMode,
+  })
+  const reusedCacheKey = proxyGroupRulePenetrationCacheBySignature.get(signature)
+
+  if (reusedCacheKey) {
+    const reusedEntry = proxyGroupRulePenetrationCache.get(reusedCacheKey)
+
+    if (reusedEntry) {
+      reusedEntry.lastAccessAt = Date.now()
+      return reusedEntry
+    }
+
+    proxyGroupRulePenetrationCacheBySignature.delete(signature)
+  }
+
+  const expanded = expandProxyGroupRuleEntries(groupName, rules, {
+    customGroup,
+    customGroupMode: normalizedCustomGroupMode,
+  })
+  const nextCacheKey = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  const createdEntry = {
+    cacheKey: nextCacheKey,
+    signature,
+    groupName,
+    customGroup,
+    customGroupMode: expanded.customGroupMode,
+    totalRules: expanded.totalRules,
+    items: expanded.items,
+    missingProviders: expanded.missingProviders,
+    createdAt: Date.now(),
+    lastAccessAt: Date.now(),
+  }
+
+  proxyGroupRulePenetrationCache.set(nextCacheKey, createdEntry)
+  proxyGroupRulePenetrationCacheBySignature.set(signature, nextCacheKey)
+  pruneProxyGroupRulePenetrationCache()
+
+  return createdEntry
+}
+
+const matchesProxyGroupRulePenetrationSearch = (entry, search) => {
+  if (!search) {
+    return true
+  }
+
+  const normalizedSearch = search.toLowerCase()
+
+  return [
+    entry.type,
+    getProxyGroupRulePenetrationDisplayType(entry.type),
+    entry.content,
+    entry.params,
+    entry.raw,
+  ].some((value) => String(value || '').toLowerCase().includes(normalizedSearch))
+}
+
+const sortProxyGroupRulePenetrationEntries = (items, sortKey, sortDirection) => {
+  if (!sortKey) {
+    return items
+  }
+
+  const direction = sortDirection === 'desc' ? -1 : 1
+
+  return [...items].sort((left, right) => {
+    const leftValue = sortKey === 'type' ? getProxyGroupRulePenetrationDisplayType(left.type) : left[sortKey]
+    const rightValue = sortKey === 'type' ? getProxyGroupRulePenetrationDisplayType(right.type) : right[sortKey]
+
+    return (
+      String(leftValue || '').localeCompare(String(rightValue || ''), 'zh-Hans-CN', {
+        numeric: true,
+        sensitivity: 'base',
+      }) * direction
+    )
+  })
+}
+
 const normalizeLookupInput = (value) => {
   const input = value.trim()
 
@@ -1141,6 +1691,7 @@ const searchRuleProviderCache = async (query) => {
         behavior: provider.behavior,
         format: provider.format,
         url: provider.source_url,
+        totalRules: countRulesInBody(provider.body),
         status: 'cached',
         matches: providerMatches.slice(0, 20),
       })
@@ -1165,6 +1716,7 @@ const websocketServer = new WebSocketServer({ noServer: true })
 
 app.use('/api/storage', express.json({ limit: '25mb' }))
 app.use('/api/background-image', express.json({ limit: '25mb' }))
+app.use('/api/proxy-group-rule-penetration', express.json({ limit: '5mb' }))
 app.use('/api/controller', express.raw({ type: '*/*', limit: '25mb' }))
 
 app.get('/api/health', (_req, res) => {
@@ -1282,10 +1834,140 @@ app.get('/api/rule-provider-search', async (req, res) => {
   }
 })
 
+app.post('/api/proxy-group-rule-penetration', (req, res) => {
+  const groupName = typeof req.body?.groupName === 'string' ? req.body.groupName.trim() : ''
+  const cacheKey = typeof req.body?.cacheKey === 'string' ? req.body.cacheKey.trim() : ''
+  const rules = Array.isArray(req.body?.rules) ? req.body.rules : null
+  const customGroupMode =
+    normalizeProxyGroupCustomMode(req.body?.customGroupMode) || getProxyGroupCustomModeFromGroupName(groupName)
+  const customGroup = customGroupMode !== null || req.body?.customGroup === true
+  const providerName = typeof req.body?.providerName === 'string' ? req.body.providerName.trim() : ''
+  const page = normalizePositiveInteger(req.body?.page, 1, 10000)
+  const pageSize = normalizePositiveInteger(req.body?.pageSize, 100, 500)
+  const tab = normalizeProxyGroupRulePenetrationTab(req.body?.tab)
+  const search = typeof req.body?.search === 'string' ? req.body.search.trim() : ''
+  const sortKey = normalizeProxyGroupRulePenetrationSortKey(req.body?.sortKey)
+  const sortDirection = normalizeProxyGroupRulePenetrationSortDirection(req.body?.sortDirection)
+
+  if (!groupName) {
+    res.status(400).json({
+      message: 'groupName is required',
+    })
+    return
+  }
+
+  if (!cacheKey && !Array.isArray(rules)) {
+    res.status(400).json({
+      message: 'rules must be an array when cacheKey is missing',
+    })
+    return
+  }
+
+  try {
+    const cacheEntry = getProxyGroupRulePenetrationCacheEntry({
+      groupName,
+      cacheKey,
+      rules: rules || [],
+      customGroup,
+      customGroupMode,
+    })
+    const scopedEntries = providerName
+      ? cacheEntry.items.filter((entry) => {
+          return providerName === 'controller' ? entry.source === 'controller' : entry.source === providerName
+        })
+      : cacheEntry.items
+    const searchMatchedEntries = scopedEntries.filter((entry) =>
+      matchesProxyGroupRulePenetrationSearch(entry, search),
+    )
+    const counts = {
+      all: searchMatchedEntries.length,
+      domain: 0,
+      ip: 0,
+      port: 0,
+    }
+
+    searchMatchedEntries.forEach((entry) => {
+      if (entry.family === 'domain') {
+        counts.domain += 1
+      } else if (entry.family === 'ip') {
+        counts.ip += 1
+      } else if (entry.family === 'port') {
+        counts.port += 1
+      }
+    })
+
+    const tabMatchedEntries =
+      tab === 'all' ? searchMatchedEntries : searchMatchedEntries.filter((entry) => entry.family === tab)
+    const sortedEntries = sortProxyGroupRulePenetrationEntries(tabMatchedEntries, sortKey, sortDirection)
+    const start = (page - 1) * pageSize
+    const end = start + pageSize
+
+    res.json({
+      cacheKey: cacheEntry.cacheKey,
+      groupName,
+      customGroup,
+      customGroupMode,
+      providerName,
+      totalRules: cacheEntry.totalRules,
+      totalMatched: tabMatchedEntries.length,
+      counts,
+      items: sortedEntries.slice(start, end),
+      missingProviders: cacheEntry.missingProviders,
+      page,
+      pageSize,
+      hasMore: end < sortedEntries.length,
+    })
+  } catch (error) {
+    if (error?.code === 'CACHE_EXPIRED') {
+      res.status(410).json({
+        message: 'cache expired',
+      })
+      return
+    }
+
+    res.status(500).json({
+      message: error instanceof Error ? error.message : String(error),
+    })
+  }
+})
+
+app.get('/sw.js', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+  res.type('application/javascript')
+  res.send(serviceWorkerCleanupScript)
+})
+
+app.get('/registerSW.js', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+  res.type('application/javascript')
+  res.send(registerSWCleanupScript)
+})
+
 if (fs.existsSync(distDir)) {
-  app.use(express.static(distDir))
+  app.use(
+    express.static(distDir, {
+      setHeaders: (res, filePath) => {
+        const fileName = path.basename(filePath)
+
+        if (
+          fileName === 'index.html' ||
+          fileName === 'sw.js' ||
+          fileName === 'registerSW.js' ||
+          fileName === 'manifest.webmanifest'
+        ) {
+          res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+          return
+        }
+
+        if (/^index-[A-Za-z0-9_-]+\.(js|css)$/.test(fileName)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+        }
+      },
+    }),
+  )
 
   app.get(/^(?!\/api\/).*/, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
     res.sendFile(path.join(distDir, 'index.html'))
   })
 }

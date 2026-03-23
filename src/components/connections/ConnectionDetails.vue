@@ -63,7 +63,10 @@
       <template v-if="proxyChainStart">
         <div class="divider md:divider-horizontal m-0"></div>
         <div class="md:w-128">
-          <ProxyChains :name="proxyChainStart" />
+          <ProxyGroup
+            :name="proxyChainStart"
+            class="transparent-collapse"
+          />
         </div>
       </template>
     </div>
@@ -81,7 +84,7 @@ import { last } from 'lodash'
 import { computed, ref, watch } from 'vue'
 import VueJsonPretty from 'vue-json-pretty'
 import 'vue-json-pretty/lib/styles.css'
-import ProxyChains from '../common/ProxyChains.vue'
+import ProxyGroup from '../proxies/ProxyGroup.vue'
 import ProxyIcon from '../proxies/ProxyIcon.vue'
 
 const { infoConn, connectionDetailModalShow } = useConnections()

@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.60](https://github.com/liandu2024/AnGe-ClashBoard/compare/v1.52...v1.60) (2026-03-23)
+
+### Features
+
+* add proxy domain grouping and rule-penetration views so policy groups can drill into matched domain, IP, and port rules with source filtering
+* surface rule-set total counts in rule lookups and restore full rule-cache refresh coverage for both text and `.mrs` providers
+
+### Bug Fixes
+
+* tighten desktop proxy-page spacing, align panel gutters, and make rule-penetration tabs size to their labels instead of stretching too wide
+* close domain-group dropdowns on outside click, use pointer cursors for menu items, and simplify connection details so only the effective matched strategy remains
+* clear stale PWA service workers and cached assets during startup so upgraded builds no longer stay stuck on old front-end bundles
+
 ## [1.52](https://github.com/liandu2024/AnGe-ClashBoard/compare/v1.51...v1.52) (2026-03-21)
 
 ### Bug Fixes

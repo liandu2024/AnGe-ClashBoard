@@ -21,10 +21,24 @@
         </div>
         <div class="flex min-w-0 flex-1 flex-col gap-1">
           <div class="flex min-w-0 items-center gap-1">
-            <span class="shrink-0 text-base">{{ name }}</span>
-            <span class="text-base-content/60 min-w-0 flex-1 truncate text-xs">
-              {{ proxyGroup.type }} ({{ proxiesCount }})
-            </span>
+            <div class="flex min-w-0 flex-1 items-center gap-1">
+              <span
+                class="shrink-0 cursor-pointer text-base"
+                @click.stop="openRulePenetrationDialog"
+              >
+                {{ name }}
+              </span>
+              <button
+                type="button"
+                class="btn btn-sm bg-base-200 border-base-200 text-base-content/80 hover:text-base-content hover:bg-base-300 hover:border-base-300 h-6 min-h-6 shrink-0 cursor-pointer px-2 text-xs font-medium shadow-none"
+                @click.stop="openRulePenetrationDialog"
+              >
+                {{ t('domainPenetration') }}
+              </button>
+              <span class="text-base-content/60 min-w-0 truncate text-xs">
+                {{ proxyGroup.type }}
+              </span>
+            </div>
             <button
               v-if="manageHiddenGroup"
               class="btn btn-circle btn-xs z-10"
@@ -64,13 +78,29 @@
         class="relative flex items-center gap-2"
       >
         <div class="flex flex-1 items-center gap-1">
-          <ProxyName
-            :name="name"
-            :icon-size="proxyGroupIconSize"
-            :icon-margin="proxyGroupIconMargin"
-          />
-          <span class="text-base-content/60 ml-1 text-xs">
-            {{ proxyGroup.type }} ({{ proxiesCount }})
+          <div class="flex shrink-0 items-center">
+            <ProxyIcon
+              v-if="proxyGroup.icon"
+              :icon="proxyGroup.icon"
+              :size="proxyGroupIconSize"
+              :margin="proxyGroupIconMargin"
+            />
+            <span
+              class="cursor-pointer"
+              @click.stop="openRulePenetrationDialog"
+            >
+              {{ name }}
+            </span>
+          </div>
+          <button
+            type="button"
+            class="btn btn-sm bg-base-200 border-base-200 text-base-content/80 hover:text-base-content hover:bg-base-300 hover:border-base-300 h-6 min-h-6 shrink-0 cursor-pointer px-2 text-xs font-medium shadow-none"
+            @click.stop="openRulePenetrationDialog"
+          >
+            {{ t('domainPenetration') }}
+          </button>
+          <span class="text-base-content/60 text-xs">
+            {{ proxyGroup.type }}
           </span>
           <button
             v-if="manageHiddenGroup"
@@ -157,6 +187,7 @@ import {
   proxyGroupLatencyTest,
   proxyMap,
 } from '@/store/proxies'
+import { openProxyGroupRulePenetrationDialog } from '@/store/proxyGroupRulePenetration'
 import {
   groupProxiesByProvider,
   manageHiddenGroup,
@@ -167,22 +198,23 @@ import {
 import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
 import { twMerge } from 'tailwind-merge'
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import CollapseCard from '../common/CollapseCard.vue'
 import LatencyTag from './LatencyTag.vue'
 import ProxiesByProvider from './ProxiesByProvider.vue'
 import ProxiesContent from './ProxiesContent.vue'
 import ProxyPenetrationSection from './ProxyPenetrationSection.vue'
 import ProxyGroupNow from './ProxyGroupNow.vue'
-import ProxyName from './ProxyName.vue'
 import ProxyIcon from './ProxyIcon.vue'
 import ProxyPreview from './ProxyPreview.vue'
 
 const props = defineProps<{
   name: string
 }>()
+const { t } = useI18n()
 const proxyGroup = computed(() => proxyMap.value[props.name])
 const allProxies = computed(() => proxyGroup.value.all ?? [])
-const { proxiesCount, renderProxies } = useRenderProxies(allProxies, props.name)
+const { renderProxies } = useRenderProxies(allProxies, props.name)
 const isLatencyTesting = ref(false)
 const handlerLatencyTest = async () => {
   if (isLatencyTesting.value) return
@@ -212,6 +244,10 @@ const hiddenGroup = computed({
 
 const handlerGroupToggle = () => {
   hiddenGroup.value = !hiddenGroup.value
+}
+
+const openRulePenetrationDialog = () => {
+  openProxyGroupRulePenetrationDialog(props.name)
 }
 
 const titleIconSize = computed(() => Math.max(proxyGroupIconSize.value, 46))

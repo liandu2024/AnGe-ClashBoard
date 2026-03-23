@@ -4,7 +4,27 @@ import './assets/main.css'
 import './assets/theme.css'
 import { initializePersistentStorage } from './helper/persistentStorage'
 
+const cleanupLegacyServiceWorkers = async () => {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+    return
+  }
+
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations()
+
+    await Promise.allSettled(registrations.map((registration) => registration.unregister()))
+
+    if ('caches' in window) {
+      const cacheKeys = await caches.keys()
+      await Promise.allSettled(cacheKeys.map((cacheKey) => caches.delete(cacheKey)))
+    }
+  } catch {
+    // Ignore cleanup failures and continue bootstrapping the app.
+  }
+}
+
 const bootstrap = async () => {
+  await cleanupLegacyServiceWorkers()
   await initializePersistentStorage()
   await import('@/helper/dayjs')
 

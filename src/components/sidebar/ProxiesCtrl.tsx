@@ -1,5 +1,11 @@
 import { disconnectByIdAPI, isSingBox, updateProxyProviderAPI } from '@/api'
-import { nodeGroups, policyGroups, renderGroups } from '@/composables/proxies'
+import {
+  domainGroupSearch,
+  domainGroups,
+  nodeGroups,
+  policyGroups,
+  renderGroups,
+} from '@/composables/proxies'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { PROXY_SORT_TYPE, PROXY_TAB_TYPE, ROUTE_NAME, SETTINGS_MENU_KEY } from '@/constant'
 import { getMinCardWidth } from '@/helper/utils'
@@ -117,6 +123,8 @@ export default defineComponent({
           count:
             type === PROXY_TAB_TYPE.POLICY
               ? policyGroups.value.length
+              : type === PROXY_TAB_TYPE.DOMAIN
+                ? domainGroups.value.length
               : type === PROXY_TAB_TYPE.NODE
                 ? nodeGroups.value.length
                 : proxyProviederList.value.length,
@@ -128,7 +136,7 @@ export default defineComponent({
       const tabs = (
         <div
           role="tablist"
-          class="tabs-box tabs tabs-xs"
+          class="proxy-main-tabs tabs-box tabs tabs-xs"
         >
           {tabsWithNumbers.value.map(({ type, count }) => {
             const label = t(type)
@@ -241,6 +249,15 @@ export default defineComponent({
         </div>
       )
 
+      const domainSearchInput = (
+        <TextInput
+          class="w-full md:max-w-sm lg:max-w-md xl:max-w-lg"
+          v-model={domainGroupSearch.value}
+          placeholder={t('domainPenetrationSearchPlaceholder')}
+          clearable={true}
+        />
+      )
+
       const settingsModal = (
         <>
           <button
@@ -341,6 +358,21 @@ export default defineComponent({
           </DialogWrapper>
         </>
       )
+
+      if (proxiesTabShow.value === PROXY_TAB_TYPE.DOMAIN) {
+        return (
+          <div class="ctrls-bar">
+            <div class="proxy-domain-ctrls flex flex-col gap-2 p-2 md:flex-row md:items-center md:gap-3">
+              <div class="proxy-domain-tabs-row min-w-0 shrink-0">
+                {tabs}
+              </div>
+              <div class="proxy-domain-search-row flex w-full min-w-0 items-center gap-2 md:w-auto md:flex-1">
+                {domainSearchInput}
+              </div>
+            </div>
+          </div>
+        )
+      }
 
       const content = !isLargeCtrlsBar.value ? (
         <div class="flex flex-col gap-2 p-2">

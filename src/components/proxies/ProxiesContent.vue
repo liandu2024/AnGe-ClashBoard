@@ -8,7 +8,11 @@ import {
   sortProxyCategoryGroups,
 } from '@/helper/proxyCategory'
 import { useCalculateMaxProxies } from '@/composables/proxiesScroll'
-import { handlerProxySelect, proxiesTabShow, proxyNodesLatencyTest } from '@/store/proxies'
+import {
+  handlerProxySelect,
+  proxiesTabShow,
+  proxyNodesLatencyTest,
+} from '@/store/proxies'
 import {
   providerProxyCategoryCollapseMap,
   providerProxyCategoryOrderMap,

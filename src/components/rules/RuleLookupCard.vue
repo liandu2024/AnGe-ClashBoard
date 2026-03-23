@@ -3,7 +3,10 @@
     <div class="flex flex-col gap-2 p-2 text-sm">
       <div class="flex flex-wrap items-center gap-2">
         <span>{{ index }}.</span>
-        <span class="text-main font-medium">{{ result.providerName }}</span>
+        <span class="text-main font-medium">
+          {{ result.providerName }}
+          <span class="text-base-content/55">({{ result.totalRules }})</span>
+        </span>
         <span
           v-if="result.behavior"
           class="badge badge-sm"
@@ -114,6 +117,7 @@ defineProps<{
     behavior: string
     format: string
     url: string
+    totalRules: number
     matches: {
       line: number
       value: string

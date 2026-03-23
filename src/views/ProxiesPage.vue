@@ -1,6 +1,6 @@
 <template>
   <div
-    class="max-md:scrollbar-hidden h-full"
+    class="max-md:scrollbar-hidden flex h-full min-h-0 flex-col"
     :class="disableProxiesPageScroll ? 'overflow-y-hidden' : 'overflow-y-scroll'"
     :style="padding"
     ref="proxiesRef"
@@ -8,7 +8,7 @@
   >
     <ProxiesCtrl />
     <template v-if="displayTwoColumns">
-      <div class="grid grid-cols-2 gap-2 p-2 md:pr-1">
+      <div class="grid grid-cols-2 gap-2 p-2">
         <div
           v-for="idx in [0, 1]"
           :key="idx"
@@ -32,7 +32,13 @@
       </div>
     </template>
     <div
-      class="grid grid-cols-1 gap-2 p-2 md:pr-1"
+      v-if="proxiesTabShow === PROXY_TAB_TYPE.DOMAIN"
+      class="flex min-h-0 flex-1 flex-col overflow-hidden p-2"
+    >
+      <ProxyDomainGroupView class="min-h-0 flex-1" />
+    </div>
+    <div
+      class="grid grid-cols-1 gap-2 p-2"
       v-else
     >
       <template v-if="proxiesTabShow === PROXY_TAB_TYPE.NODE">
@@ -50,12 +56,15 @@
         :name="name"
       />
     </div>
+    <ProxyGroupRulePenetrationDialog />
   </div>
 </template>
 
 <script setup lang="ts">
+import ProxyDomainGroupView from '@/components/proxies/ProxyDomainGroupView.vue'
 import ProxyGroup from '@/components/proxies/ProxyGroup.vue'
 import ProxyGroupForMobile from '@/components/proxies/ProxyGroupForMobile.vue'
+import ProxyGroupRulePenetrationDialog from '@/components/proxies/ProxyGroupRulePenetrationDialog.vue'
 import ProxyGroupUnit from '@/components/proxies/ProxyGroupUnit.vue'
 import ProxyProvider from '@/components/proxies/ProxyProvider.vue'
 import ProxiesCtrl from '@/components/sidebar/ProxiesCtrl.tsx'
@@ -75,6 +84,7 @@ import {
   proxiesTabShow,
   proxyProviederList,
 } from '@/store/proxies'
+import { fetchRules, rules } from '@/store/rules'
 import { twoColumnProxyGroup } from '@/store/settings'
 import { useDocumentVisibility, useSessionStorage } from '@vueuse/core'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -88,6 +98,7 @@ const documentVisible = useDocumentVisibility()
 const autoRefreshTimer = ref<number>()
 const scrollStatus = useSessionStorage('cache/proxies-scroll-status', {
   [PROXY_TAB_TYPE.POLICY]: 0,
+  [PROXY_TAB_TYPE.DOMAIN]: 0,
   [PROXY_TAB_TYPE.NODE]: 0,
   [PROXY_TAB_TYPE.PROVIDER]: 0,
 })
@@ -121,6 +132,9 @@ watch(proxiesTabShow, () =>
   nextTick(() => {
     waitTickUntilReady()
     fetchProxies()
+    if (proxiesTabShow.value === PROXY_TAB_TYPE.DOMAIN && rules.value.length === 0) {
+      fetchRules()
+    }
   }),
 )
 
@@ -216,7 +230,7 @@ onMounted(() => {
     isProxiesPageMounted.value = true
     nextTick(() => {
       waitTickUntilReady()
-      fetchProxies()
+      Promise.allSettled([fetchProxies(), rules.value.length === 0 ? fetchRules() : Promise.resolve()])
     })
   })
 })
@@ -230,6 +244,10 @@ onUnmounted(() => {
 })
 
 const renderComponent = computed(() => {
+  if (proxiesTabShow.value === PROXY_TAB_TYPE.DOMAIN) {
+    return ProxyDomainGroupView
+  }
+
   if (proxiesTabShow.value === PROXY_TAB_TYPE.PROVIDER) {
     return ProxyProvider
   }
@@ -242,6 +260,10 @@ const renderComponent = computed(() => {
 })
 
 const displayTwoColumns = computed(() => {
+  if (proxiesTabShow.value === PROXY_TAB_TYPE.DOMAIN) {
+    return false
+  }
+
   if (proxiesTabShow.value === PROXY_TAB_TYPE.PROVIDER && isMiddleScreen.value) {
     return false
   }

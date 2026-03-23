@@ -243,10 +243,20 @@ export const fetchProxies = async () => {
     }
   }
 
-  proxyMap.value = {
-    ...allProviderProxies,
-    ...proxyData.proxies,
-  }
+  proxyMap.value = Object.fromEntries(
+    Object.entries({
+      ...allProviderProxies,
+      ...proxyData.proxies,
+    }).map(([name, proxy]) => {
+      return [
+        name,
+        {
+          ...(allProviderProxies[name] ?? {}),
+          ...proxy,
+        },
+      ]
+    }),
+  )
   proxyGroupList.value = Object.values(proxyData.proxies)
     .filter((proxy) => proxy.all?.length && proxy.name !== GLOBAL)
     .sort((prev, next) => {

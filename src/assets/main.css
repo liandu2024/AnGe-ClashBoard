@@ -88,6 +88,10 @@ html.apple-mobile-ui {
   border-radius: var(--app-radius-compact, 0.4rem) !important;
 }
 
+#app-content .proxy-main-tabs .tab {
+  white-space: nowrap;
+}
+
 #app-content .ctrls-bar .input,
 #app-content .ctrls-bar .select,
 #app-content .ctrls-bar .join-item,
@@ -210,6 +214,39 @@ html.apple-mobile-ui {
 .btn.btn-sm,
 .tabs.tabs-xs .tab {
   @apply text-sm;
+}
+
+@media screen and (max-width: 768px) {
+  #app-content .proxy-main-tabs {
+    gap: 0.125rem;
+    padding: 0.25rem !important;
+    flex-wrap: nowrap;
+    width: max-content;
+    max-width: 100%;
+  }
+
+  #app-content .proxy-main-tabs .tab {
+    min-width: 0 !important;
+    padding-inline: 0.625rem !important;
+  }
+
+  #app-content .proxy-domain-tabs-row {
+    overflow-x: auto;
+    scrollbar-width: none;
+    width: 100%;
+  }
+
+  #app-content .proxy-domain-tabs-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  #app-content .proxy-domain-search-row {
+    width: 100%;
+  }
+
+  #app-content .proxy-domain-search-row > .relative {
+    width: 100%;
+  }
 }
 
 @for $i from 0 to 100 {

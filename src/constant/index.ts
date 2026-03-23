@@ -81,6 +81,7 @@ export enum RULE_TAB_TYPE {
 
 export enum PROXY_TAB_TYPE {
   POLICY = 'policyGroup',
+  DOMAIN = 'domainGroup',
   NODE = 'nodeGroup',
   PROVIDER = 'proxyProvider',
 }
