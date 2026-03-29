@@ -45,7 +45,7 @@ import { usePaddingForViews } from '@/composables/paddingViews'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { computed, nextTick, ref } from 'vue'
 
-const { paddingTop, paddingBottom } = usePaddingForViews({
+const { paddingBottom } = usePaddingForViews({
   offsetTop: 0,
   offsetBottom: 0,
 })
@@ -69,7 +69,6 @@ const virutalOptions = computed(() => {
     getScrollElement: () => parentRef.value,
     estimateSize: () => props.size,
     overscan: props.overscan,
-    paddingStart: paddingTop.value,
   }
 })
 
@@ -78,9 +77,7 @@ const virtualRows = computed(() => rowVirtualizer.value.getVirtualItems())
 const totalSize = computed(() => rowVirtualizer.value.getTotalSize())
 
 const marginBottom = (index: number) => {
-  return index === props.data.length - 1
-    ? `${paddingBottom.value}px`
-    : 'var(--app-space, 0.5rem)'
+  return index === props.data.length - 1 ? `${paddingBottom.value}px` : 'var(--app-space, 0.5rem)'
 }
 const measureElement = (el: Element | null) => {
   if (!el) {

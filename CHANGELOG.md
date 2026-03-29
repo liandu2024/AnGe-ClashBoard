@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.74](https://github.com/liandu2024/AnGe-ClashBoard/compare/v1.73...v1.74) (2026-03-29)
+
+### Features
+
+* restructure mobile pages so top toolbars sit above their own scroll areas, keeping the right-side scrollbar below the toolbar and aligning page gutters more consistently
+
+### Bug Fixes
+
+* restore the top visible content area for mobile logs, large rule lists, and connection card lists so the first items are no longer hidden behind the toolbar
+* tighten the mobile proxy toolbar by shrinking the mode selector and preserving a cleaner right gutter for the latency-test action icons
+* increase the top gap under the mobile settings menu so the first settings panel matches the app-wide spacing rhythm
+
 ## [1.73](https://github.com/liandu2024/AnGe-ClashBoard/compare/v1.72...v1.73) (2026-03-29)
 
 ### Features

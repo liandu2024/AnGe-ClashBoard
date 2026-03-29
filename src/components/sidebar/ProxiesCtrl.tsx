@@ -166,7 +166,10 @@ export default defineComponent({
 
       const modeSelect = proxiesTabShow.value === PROXY_TAB_TYPE.POLICY && configs.value && (
         <select
-          class={['select select-sm', isLargeCtrlsBar.value ? 'min-w-40' : 'min-w-24']}
+          class={[
+            'select select-sm shrink-0',
+            isLargeCtrlsBar.value ? 'min-w-40' : 'w-20 min-w-20',
+          ]}
           v-model={configs.value.mode}
           onChange={handlerModeChange}
         >
@@ -241,7 +244,7 @@ export default defineComponent({
         />
       )
 
-      const searchSection = <div class="flex flex-1 items-center">{searchInput}</div>
+      const searchSection = <div class="flex min-w-0 flex-1 items-center">{searchInput}</div>
 
       const domainSearchInput = (
         <TextInput

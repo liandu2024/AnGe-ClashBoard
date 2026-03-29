@@ -1,30 +1,30 @@
 <template>
-  <div
-    class="relative flex h-full flex-col overflow-y-auto"
-    ref="scrollContainerRef"
-    @scroll.passive="handleScroll"
-  >
-    <!-- 左侧菜单 -->
+  <div class="relative flex h-full min-h-0 flex-col overflow-hidden">
     <SettingsMenu
       ref="menuComponentRef"
       :menu-items="menuItems"
       :active-menu-key="activeMenuKey"
       @menu-click="handleMenuClick"
     />
-    <!-- 右侧内容区域 -->
     <div
-      class="grid grid-cols-1 gap-2 p-2"
-      :style="padding"
+      ref="scrollContainerRef"
+      class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
+      @scroll.passive="handleScroll"
     >
-      <div class="flex flex-col gap-2">
-        <div
-          v-for="item in menuItems"
-          :key="item.key"
-          :id="`item-${item.key}`"
-          :data-key="item.key"
-          class="card"
-        >
-          <component :is="item.component" />
+      <div
+        class="grid grid-cols-1 gap-2 p-2"
+        :style="padding"
+      >
+        <div class="flex flex-col gap-2">
+          <div
+            v-for="item in menuItems"
+            :key="item.key"
+            :id="`item-${item.key}`"
+            :data-key="item.key"
+            class="card"
+          >
+            <component :is="item.component" />
+          </div>
         </div>
       </div>
     </div>
@@ -41,6 +41,7 @@ import SettingsMenu from '@/components/settings/SettingsMenu.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
 import { isSettingVisible } from '@/composables/settings'
 import { SETTINGS_MENU_KEY } from '@/constant'
+import { isMiddleScreen } from '@/helper/utils'
 import { settingsMenuOrder } from '@/store/settings'
 import {
   ArrowsRightLeftIcon,
@@ -62,7 +63,10 @@ type MenuItem = {
   component: Component
 }
 
-const { padding } = usePaddingForViews()
+const { padding } = usePaddingForViews({
+  offsetTop: 8,
+  offsetBottom: 0,
+})
 const route = useRoute()
 
 const menuComponentRef = ref<InstanceType<typeof SettingsMenu> | null>(null)
@@ -148,7 +152,7 @@ const getItemRef = (key: SETTINGS_MENU_KEY) => {
 const isTriggerByClick = ref(false)
 const timeoutId = ref<number>()
 const getSettingsMenuOffset = () => {
-  return (menuComponentRef.value?.getMenuHeight?.() || 0) + 8
+  return (isMiddleScreen.value ? menuComponentRef.value?.getMenuHeight?.() || 0 : 0) + 8
 }
 
 const handleMenuClick = (key: SETTINGS_MENU_KEY) => {

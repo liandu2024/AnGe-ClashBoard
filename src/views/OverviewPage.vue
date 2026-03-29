@@ -1,15 +1,17 @@
 <template>
-  <div
-    class="h-full overflow-x-hidden overflow-y-auto"
-    :style="padding"
-  >
+  <div class="flex h-full min-h-0 flex-col overflow-hidden">
     <OverviewCtrl />
-    <div class="flex flex-col gap-2 p-2">
-      <component
-        v-for="item in visibleCards"
-        :key="item"
-        :is="cardComponents[item.card]"
-      />
+    <div
+      class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
+      :style="padding"
+    >
+      <div class="flex flex-col gap-2 p-2">
+        <component
+          v-for="item in visibleCards"
+          :key="item"
+          :is="cardComponents[item.card]"
+        />
+      </div>
     </div>
   </div>
 </template>

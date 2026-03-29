@@ -253,6 +253,11 @@ html.apple-mobile-ui {
 }
 
 @media screen and (max-width: 768px) {
+  #app-content .ctrls-bar .app-card-padding,
+  #app-content .settings-menu.app-card-padding {
+    padding-inline: 0.875rem !important;
+  }
+
   #app-content .proxy-main-tabs {
     gap: 0.125rem;
     padding: 0.25rem !important;

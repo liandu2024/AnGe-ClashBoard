@@ -1,60 +1,66 @@
 <template>
-  <div
-    class="max-md:scrollbar-hidden flex h-full min-h-0 flex-col"
-    :class="disableProxiesPageScroll ? 'overflow-y-hidden' : 'overflow-y-scroll'"
-    :style="padding"
-    ref="proxiesRef"
-    @scroll.passive="handleScroll"
-  >
+  <div class="flex h-full min-h-0 flex-col overflow-hidden">
     <ProxiesCtrl />
-    <template v-if="displayTwoColumns">
-      <div class="grid grid-cols-2 gap-2 p-2">
-        <div
-          v-for="idx in [0, 1]"
-          :key="idx"
-          class="flex flex-1 flex-col gap-2"
-        >
-          <template v-if="proxiesTabShow === PROXY_TAB_TYPE.NODE">
-            <ProxyGroupUnit
-              v-for="names in filterContent(nodeGroupBlocks, idx)"
-              :key="names.join('::')"
-              :names="names"
+    <div
+      ref="proxiesRef"
+      class="max-md:scrollbar-hidden min-h-0 flex-1 overflow-x-hidden"
+      :class="
+        proxiesTabShow === PROXY_TAB_TYPE.DOMAIN || disableProxiesPageScroll
+          ? 'overflow-y-hidden'
+          : 'overflow-y-scroll'
+      "
+      :style="padding"
+      @scroll.passive="handleScroll"
+    >
+      <template v-if="displayTwoColumns">
+        <div class="grid grid-cols-2 gap-2 p-2">
+          <div
+            v-for="idx in [0, 1]"
+            :key="idx"
+            class="flex flex-1 flex-col gap-2"
+          >
+            <template v-if="proxiesTabShow === PROXY_TAB_TYPE.NODE">
+              <ProxyGroupUnit
+                v-for="names in filterContent(nodeGroupBlocks, idx)"
+                :key="names.join('::')"
+                :names="names"
+              />
+            </template>
+            <component
+              v-else
+              v-for="name in filterContent(renderGroups, idx)"
+              :is="renderComponent"
+              :key="name"
+              :name="name"
             />
-          </template>
-          <component
-            v-else
-            v-for="name in filterContent(renderGroups, idx)"
-            :is="renderComponent"
-            :key="name"
-            :name="name"
-          />
+          </div>
         </div>
-      </div>
-    </template>
-    <div
-      v-else-if="proxiesTabShow === PROXY_TAB_TYPE.DOMAIN"
-      class="flex min-h-0 flex-1 flex-col overflow-hidden p-2"
-    >
-      <ProxyDomainGroupView class="min-h-0 flex-1" />
-    </div>
-    <div
-      class="grid grid-cols-1 gap-2 p-2"
-      v-else
-    >
-      <template v-if="proxiesTabShow === PROXY_TAB_TYPE.NODE">
-        <ProxyGroupUnit
-          v-for="names in nodeGroupBlocks"
-          :key="names.join('::')"
-          :names="names"
-        />
       </template>
-      <component
+      <div
+        v-else-if="proxiesTabShow === PROXY_TAB_TYPE.DOMAIN"
+        class="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-2"
+      >
+        <ProxyDomainGroupView class="min-h-0 flex-1" />
+      </div>
+      <div
+        class="grid grid-cols-1 gap-2 p-2"
         v-else
-        v-for="name in renderGroups"
-        :is="renderComponent"
-        :key="name"
-        :name="name"
-      />
+      >
+        <template v-if="proxiesTabShow === PROXY_TAB_TYPE.NODE">
+          <ProxyGroupUnit
+            v-for="names in nodeGroupBlocks"
+            :key="names.join('::')"
+            :names="names"
+          />
+        </template>
+        <component
+          v-else
+          v-for="name in renderGroups"
+          :is="renderComponent"
+          :key="name"
+          :name="name"
+        />
+      </div>
     </div>
     <ProxyGroupRulePenetrationDialog />
   </div>
@@ -151,7 +157,9 @@ const nextAutoRefreshSchedule = computed<AutoRefreshSchedule | null>(() => {
     })
   } else {
     const rootNames =
-      proxiesTabShow.value === PROXY_TAB_TYPE.NODE ? nodeGroupBlocks.value.flat() : renderGroups.value
+      proxiesTabShow.value === PROXY_TAB_TYPE.NODE
+        ? nodeGroupBlocks.value.flat()
+        : renderGroups.value
 
     rootNames.forEach((name) => {
       candidateNames.add(name)
@@ -230,7 +238,10 @@ onMounted(() => {
     isProxiesPageMounted.value = true
     nextTick(() => {
       waitTickUntilReady()
-      Promise.allSettled([fetchProxies(), rules.value.length === 0 ? fetchRules() : Promise.resolve()])
+      Promise.allSettled([
+        fetchProxies(),
+        rules.value.length === 0 ? fetchRules() : Promise.resolve(),
+      ])
     })
   })
 })
