@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.84](https://github.com/liandu2024/AnGe-ClashBoard/compare/v1.83...v1.84) (2026-04-03)
+
+### Bug Fixes
+
+* restore true content-driven sizing for the connections table in auto width mode so each column expands with its actual content instead of being constrained by fixed column widths and truncation rules
+
 ## [1.83](https://github.com/liandu2024/AnGe-ClashBoard/compare/v1.82...v1.83) (2026-04-03)
 
 ### Bug Fixes

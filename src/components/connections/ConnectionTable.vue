@@ -1,6 +1,8 @@
 <template>
   <div class="app-card-padding flex min-h-0 flex-1">
-    <div class="connection-table-shell border-base-300/60 bg-base-100 flex min-h-0 flex-1 overflow-hidden rounded-lg border">
+    <div
+      class="connection-table-shell border-base-300/60 bg-base-100 flex min-h-0 flex-1 overflow-hidden rounded-lg border"
+    >
       <div
         ref="parentRef"
         class="connection-table-scroll min-h-0 flex-1 overflow-auto overscroll-contain"
@@ -10,12 +12,12 @@
             :class="sharedTableClass"
             :style="tableStyle"
           >
-            <colgroup>
+            <colgroup v-if="isManualTable">
               <col
                 v-for="column in tanstackTable.getVisibleLeafColumns()"
                 :key="column.id"
                 :style="getColumnStyle(column.id, column.getSize())"
-              >
+              />
             </colgroup>
             <thead class="bg-base-100 sticky top-0 z-10">
               <tr
@@ -106,39 +108,17 @@
                   transform: `translateY(${virtualRow.start - index * virtualRow.size}px)`,
                 }"
                 class="hover:bg-primary! hover:text-primary-content"
-                :class="[
-                  index % 2 === 0 ? 'bg-base-100' : 'bg-base-200',
-                  'cursor-pointer',
-                ]"
+                :class="[index % 2 === 0 ? 'bg-base-100' : 'bg-base-200', 'cursor-pointer']"
                 @click="handlerClickRow(rows[virtualRow.index])"
               >
                 <td
                   v-for="cell in rows[virtualRow.index].getVisibleCells()"
                   :key="cell.id"
                   :class="[
-                    cell.column.id === CONNECTIONS_TABLE_ACCESSOR_KEY.Close
-                      ? 'px-1'
-                      : '',
+                    cell.column.id === CONNECTIONS_TABLE_ACCESSOR_KEY.Close ? 'px-1' : '',
                     isManualTable
-                      ? 'truncate text-sm select-text cursor-pointer'
-                      : twMerge(
-                          'text-sm whitespace-nowrap select-text cursor-pointer',
-                          [
-                            CONNECTIONS_TABLE_ACCESSOR_KEY.Download,
-                            CONNECTIONS_TABLE_ACCESSOR_KEY.DlSpeed,
-                            CONNECTIONS_TABLE_ACCESSOR_KEY.Upload,
-                            CONNECTIONS_TABLE_ACCESSOR_KEY.UlSpeed,
-                          ].includes(cell.column.id as CONNECTIONS_TABLE_ACCESSOR_KEY) &&
-                            'min-w-20',
-                          CONNECTIONS_TABLE_ACCESSOR_KEY.Host ===
-                            (cell.column.id as CONNECTIONS_TABLE_ACCESSOR_KEY) &&
-                            'max-w-xs truncate',
-                          [
-                            CONNECTIONS_TABLE_ACCESSOR_KEY.Chains,
-                            CONNECTIONS_TABLE_ACCESSOR_KEY.Rule,
-                          ].includes(cell.column.id as CONNECTIONS_TABLE_ACCESSOR_KEY) &&
-                            'max-w-xl truncate',
-                        ),
+                      ? 'cursor-pointer truncate text-sm select-text'
+                      : 'cursor-pointer text-sm whitespace-nowrap select-text',
                     cell.column.getIsPinned && cell.column.getIsPinned() === 'left'
                       ? 'pinned-td sticky left-0 z-20 bg-inherit'
                       : '',
@@ -246,7 +226,6 @@ import {
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { useStorage } from '@vueuse/core'
 import dayjs from 'dayjs'
-import { twMerge } from 'tailwind-merge'
 import { computed, h, ref, type VNode } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ProxyName from '../proxies/ProxyName.vue'
@@ -269,11 +248,6 @@ const columnWidthMap = useStorage('config/table-column-width', {
   [CONNECTIONS_TABLE_ACCESSOR_KEY.Destination]: 150,
   [CONNECTIONS_TABLE_ACCESSOR_KEY.ConnectTime]: 100,
 } as Record<CONNECTIONS_TABLE_ACCESSOR_KEY, number>)
-const AUTO_COLUMN_WIDTH_MAP: Partial<Record<CONNECTIONS_TABLE_ACCESSOR_KEY, number>> = {
-  [CONNECTIONS_TABLE_ACCESSOR_KEY.Close]: 56,
-  [CONNECTIONS_TABLE_ACCESSOR_KEY.Type]: 88,
-  [CONNECTIONS_TABLE_ACCESSOR_KEY.SourceIP]: 112,
-}
 const GROUPED_COLUMN_WIDTH_MAP: Partial<Record<CONNECTIONS_TABLE_ACCESSOR_KEY, number>> = {
   [CONNECTIONS_TABLE_ACCESSOR_KEY.Type]: 140,
   [CONNECTIONS_TABLE_ACCESSOR_KEY.SourceIP]: 156,
@@ -594,7 +568,11 @@ const rowVirtualizer = useVirtualizer(rowVirtualizerOptions)
 const virtualRows = computed(() => rowVirtualizer.value.getVirtualItems())
 const totalSize = computed(() => rowVirtualizer.value.getTotalSize() + 24)
 const sharedTableClass = computed(() => {
-  return ['table table-fixed rounded-none', sizeOfTable.value]
+  return [
+    'table rounded-none',
+    isManualTable.value ? 'table-fixed' : 'table-auto',
+    sizeOfTable.value,
+  ]
 })
 const getEffectiveColumnWidth = (columnId: string, width: number) => {
   const accessorKey = columnId as CONNECTIONS_TABLE_ACCESSOR_KEY
@@ -603,23 +581,34 @@ const getEffectiveColumnWidth = (columnId: string, width: number) => {
     return GROUPED_COLUMN_WIDTH_MAP[accessorKey] ?? width
   }
 
-  if (!isManualTable.value) {
-    return AUTO_COLUMN_WIDTH_MAP[accessorKey] ?? width
-  }
-
   return width
 }
 const resolvedTableWidth = computed(() => {
+  if (!isManualTable.value) {
+    return null
+  }
+
   return tanstackTable
     .getVisibleLeafColumns()
     .reduce((total, column) => total + getEffectiveColumnWidth(column.id, column.getSize()), 0)
 })
 const tableStyle = computed(() => {
+  if (!isManualTable.value) {
+    return {
+      width: 'max-content',
+      minWidth: '100%',
+    }
+  }
+
   return {
     width: `${resolvedTableWidth.value}px`,
   }
 })
 const getColumnStyle = (columnId: string, width: number) => {
+  if (!isManualTable.value) {
+    return undefined
+  }
+
   const effectiveWidth = getEffectiveColumnWidth(columnId, width)
 
   return {
