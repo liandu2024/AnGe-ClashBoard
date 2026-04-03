@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.83](https://github.com/liandu2024/AnGe-ClashBoard/compare/v1.82...v1.83) (2026-04-03)
+
+### Bug Fixes
+
+* fix the top-right expand/collapse action on the proxy page so it correctly controls the active render state in both the node and provider tabs, including provider category mode
+
 ## [1.82](https://github.com/liandu2024/AnGe-ClashBoard/compare/v1.81...v1.82) (2026-03-31)
 
 ### Bug Fixes

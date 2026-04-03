@@ -8,6 +8,11 @@ import {
 } from '@/composables/proxies'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { PROXY_SORT_TYPE, PROXY_TAB_TYPE, ROUTE_NAME, SETTINGS_MENU_KEY } from '@/constant'
+import {
+  buildProxyCategoryGroups,
+  getProxyCategoryCollapseKey,
+  isProxyCategoryEnabled,
+} from '@/helper/proxyCategory'
 import { getMinCardWidth } from '@/helper/utils'
 import { configs, updateConfigs } from '@/store/config'
 import { activeConnections } from '@/store/connections'
@@ -27,6 +32,10 @@ import {
   hideUnavailableProxies,
   manageHiddenGroup,
   minProxyCardWidth,
+  providerProxyCategoryCollapseMap,
+  providerProxyCategoryEnabledMap,
+  providerProxyCategoryFeatureEnabled,
+  providerProxyCategoryWildcardMap,
   proxyCardSize,
   proxySortType,
   twoColumnProxyGroup,
@@ -49,6 +58,16 @@ import TextInput from '../common/TextInput.vue'
 export default defineComponent({
   name: 'ProxiesCtrl',
   setup() {
+    type GlobalCollapseTarget =
+      | {
+          type: 'group'
+          key: string
+        }
+      | {
+          type: 'provider-category'
+          key: string
+        }
+
     const { t } = useI18n()
     const router = useRouter()
     const isUpgrading = ref(false)
@@ -102,14 +121,91 @@ export default defineComponent({
       }
     }
 
-    const hasNotCollapsed = computed(() => {
-      return renderGroups.value.some((name) => collapseGroupMap.value[name])
+    const globalCollapseTargets = computed<GlobalCollapseTarget[]>(() => {
+      if (proxiesTabShow.value === PROXY_TAB_TYPE.NODE) {
+        return renderGroups.value.map((name) => ({
+          type: 'group',
+          key: `penetration:${name}:level-1`,
+        }))
+      }
+
+      if (proxiesTabShow.value === PROXY_TAB_TYPE.PROVIDER) {
+        const targets: GlobalCollapseTarget[] = []
+
+        renderGroups.value.forEach((providerName) => {
+          const provider = proxyProviederList.value.find((item) => item.name === providerName)
+
+          if (!provider) {
+            return
+          }
+
+          const providerAllProxies = provider.proxies.map((node) => node.name)
+          const wildcard = providerProxyCategoryWildcardMap.value[providerName] ?? ''
+          const categoryEnabled =
+            providerProxyCategoryFeatureEnabled.value &&
+            isProxyCategoryEnabled(
+              providerAllProxies,
+              wildcard,
+              providerProxyCategoryEnabledMap.value[providerName] ?? false,
+            )
+
+          if (!categoryEnabled) {
+            targets.push({
+              type: 'group',
+              key: providerName,
+            })
+            return
+          }
+
+          buildProxyCategoryGroups(
+            providerAllProxies,
+            wildcard,
+            t('other'),
+            providerAllProxies,
+          ).forEach(({ name: categoryName }) => {
+            targets.push({
+              type: 'provider-category',
+              key: getProxyCategoryCollapseKey(providerName, categoryName),
+            })
+          })
+        })
+
+        return targets
+      }
+
+      return renderGroups.value.map((name) => ({
+        type: 'group',
+        key: name,
+      }))
+    })
+
+    const hasExpandedTargets = computed(() => {
+      return globalCollapseTargets.value.some((target) => {
+        if (target.type === 'provider-category') {
+          return !providerProxyCategoryCollapseMap.value[target.key]
+        }
+
+        return Boolean(collapseGroupMap.value[target.key])
+      })
     })
 
     const handlerClickToggleCollapse = () => {
-      collapseGroupMap.value = Object.fromEntries(
-        renderGroups.value.map((name) => [name, !hasNotCollapsed.value]),
-      )
+      const nextCollapseGroupMap = { ...collapseGroupMap.value }
+      const nextProviderProxyCategoryCollapseMap = {
+        ...providerProxyCategoryCollapseMap.value,
+      }
+
+      globalCollapseTargets.value.forEach((target) => {
+        if (target.type === 'provider-category') {
+          nextProviderProxyCategoryCollapseMap[target.key] = hasExpandedTargets.value
+          return
+        }
+
+        nextCollapseGroupMap[target.key] = !hasExpandedTargets.value
+      })
+
+      collapseGroupMap.value = nextCollapseGroupMap
+      providerProxyCategoryCollapseMap.value = nextProviderProxyCategoryCollapseMap
     }
 
     const handlerResetProxyCardWidth = () => {
@@ -230,7 +326,7 @@ export default defineComponent({
           ]}
           onClick={handlerClickToggleCollapse}
         >
-          {hasNotCollapsed.value ? (
+          {hasExpandedTargets.value ? (
             <ChevronUpIcon class="h-4 w-4" />
           ) : (
             <ChevronDownIcon class="h-4 w-4" />
