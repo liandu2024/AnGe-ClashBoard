@@ -244,4 +244,4 @@ ZASHBOARD_OPENCLASH_CONFIG_DIR
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=liandu2024/AnGe-ClashBoard&type=Date)](https://www.star-history.com/#liandu2024/AnGe-ClashBoard&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=liandu2024/AnGe-ClashBoard&type=Date)](https://star-history.dera.page/#liandu2024/AnGe-ClashBoard&Date)
